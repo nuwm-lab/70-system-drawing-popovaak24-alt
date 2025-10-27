@@ -30,6 +30,8 @@ namespace GraphPlot
     private NumericUpDown? nudDx;
     private Button? btnReplot;
     private Button? btnSave;
+    private RadioButton? rdoLine;  // draw connected polyline
+    private RadioButton? rdoPoints; // draw points only
 
         // Plot padding inside plotPanel
         private readonly Padding plotPadding = new Padding(50, 30, 30, 50);
@@ -58,10 +60,16 @@ namespace GraphPlot
             btnReplot = new Button { Text = "Replot", Location = new Point(420, 8), Width = 80 };
             btnReplot.Click += (s, e) => plotPanel!.Invalidate();
 
-            btnSave = new Button { Text = "Save PNG", Location = new Point(508, 8), Width = 90 };
+            // Radio buttons for display mode
+            rdoLine = new RadioButton { Text = "Line", AutoSize = true, Location = new Point(508, 10), Checked = true };
+            rdoPoints = new RadioButton { Text = "Points", AutoSize = true, Location = new Point(560, 10) };
+            rdoLine.CheckedChanged += (s, e) => { plotPanel!.Invalidate(); UpdateModeText(); };
+            rdoPoints.CheckedChanged += (s, e) => { plotPanel!.Invalidate(); UpdateModeText(); };
+
+            btnSave = new Button { Text = "Save PNG", Location = new Point(620, 8), Width = 90 };
             btnSave.Click += BtnSave_Click;
 
-            topPanel.Controls.AddRange(new Control[] { lblXmin, nudXmin, lblXmax, nudXmax, lblDx, nudDx, btnReplot, btnSave });
+            topPanel.Controls.AddRange(new Control[] { lblXmin, nudXmin, lblXmax, nudXmax, lblDx, nudDx, btnReplot, rdoLine, rdoPoints, btnSave });
 
             // Plot panel
             plotPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
@@ -104,6 +112,16 @@ namespace GraphPlot
         {
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             if (plotPanel != null) DrawPlot(e.Graphics, plotPanel.ClientRectangle);
+        }
+
+        private void UpdateModeText()
+        {
+            if (rdoLine != null && rdoLine.Checked)
+                Text = "Function Plotter - Mode: Line";
+            else if (rdoPoints != null && rdoPoints.Checked)
+                Text = "Function Plotter - Mode: Points";
+            else
+                Text = "Function Plotter";
         }
 
         private void DrawPlot(Graphics g, Rectangle clientRect)
@@ -217,10 +235,18 @@ namespace GraphPlot
                 if (double.IsNaN(y) || double.IsInfinity(y)) continue;
                 points.Add(Map(xs[i], y));
             }
-            if (points.Count >= 2)
+            if (points.Count >= 1)
             {
-                using (var pen = new Pen(Color.DodgerBlue, 2f)) g.DrawLines(pen, points.ToArray());
+                // draw markers
                 foreach (var p in points) g.FillEllipse(Brushes.Red, p.X - 3, p.Y - 3, 6, 6);
+                // optionally connect
+                if (rdoLine == null || rdoLine.Checked)
+                {
+                    if (points.Count >= 2)
+                    {
+                        using (var pen = new Pen(Color.DodgerBlue, 2f)) g.DrawLines(pen, points.ToArray());
+                    }
+                }
             }
 
             // Tick labels
@@ -263,4 +289,3 @@ namespace GraphPlot
         }
     }
 }
-
