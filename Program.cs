@@ -155,5 +155,3 @@ namespace GraphPlotApp
 		}
 	}
 }
-
-
