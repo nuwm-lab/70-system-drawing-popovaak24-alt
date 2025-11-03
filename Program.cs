@@ -19,6 +19,12 @@ namespace GraphPlotApp
 
 	public class GraphForm : Form
 	{
+		// UI controls for rendering mode
+		private FlowLayoutPanel topPanel;
+		private RadioButton rbLine;
+		private RadioButton rbPoints;
+		private float pointSize = 6f;
+
 		// Plot parameters (change if needed)
 		private readonly double xMin = 0.1;
 		private readonly double xMax = 1.2;
@@ -34,6 +40,27 @@ namespace GraphPlotApp
 			DoubleBuffered = true; // reduce flicker
 			BackColor = Color.White;
 
+			// Top panel with rendering mode selection
+			topPanel = new FlowLayoutPanel
+			{
+				Dock = DockStyle.Top,
+				AutoSize = true,
+				Padding = new Padding(6),
+				WrapContents = false,
+				FlowDirection = FlowDirection.LeftToRight
+			};
+
+			var lbl = new Label { Text = "Режим:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 8, 6, 0) };
+			rbLine = new RadioButton { Text = "Лінійний", AutoSize = true, Checked = true, Padding = new Padding(6) };
+			rbPoints = new RadioButton { Text = "Точковий", AutoSize = true, Padding = new Padding(6) };
+			rbLine.CheckedChanged += (s, e) => Invalidate();
+			rbPoints.CheckedChanged += (s, e) => Invalidate();
+
+			topPanel.Controls.Add(lbl);
+			topPanel.Controls.Add(rbLine);
+			topPanel.Controls.Add(rbPoints);
+			Controls.Add(topPanel);
+
 			// When the form is resized, invalidate so Paint runs again and rescales
 			Resize += (s, e) => Invalidate();
 		}
@@ -45,8 +72,9 @@ namespace GraphPlotApp
 			g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
 			var rect = ClientRectangle;
-			int margin = 50;
-			var plotRect = new Rectangle(rect.Left + margin, rect.Top + margin, Math.Max(10, rect.Width - 2 * margin), Math.Max(10, rect.Height - 2 * margin));
+			int marginLeftRight = 50;
+			int marginTop = topPanel?.Height + 10 ?? 60; // leave room for top controls
+			var plotRect = new Rectangle(rect.Left + marginLeftRight, rect.Top + marginTop, Math.Max(10, rect.Width - 2 * marginLeftRight), Math.Max(10, rect.Height - marginTop - marginLeftRight));
 
 			// Calculate function samples
 			var xs = new List<double>();
@@ -137,10 +165,26 @@ namespace GraphPlotApp
 				}
 			}
 
-			// draw the curve
-			using (var pen = new Pen(Color.Teal, 2))
+			// draw the curve either as lines or as points depending on UI
+			if (rbPoints != null && rbPoints.Checked)
 			{
-				g.DrawLines(pen, pts);
+				using (var brush = new SolidBrush(Color.Teal))
+				{
+					for (int i = 0; i < pts.Length; i++)
+					{
+						var p = pts[i];
+						// draw small filled ellipse centered at the sample
+						float ps = pointSize;
+						g.FillEllipse(brush, p.X - ps / 2f, p.Y - ps / 2f, ps, ps);
+					}
+				}
+			}
+			else
+			{
+				using (var pen = new Pen(Color.Teal, 2))
+				{
+					g.DrawLines(pen, pts);
+				}
 			}
 
 			// draw labels (simple)
@@ -155,5 +199,3 @@ namespace GraphPlotApp
 		}
 	}
 }
-
-
