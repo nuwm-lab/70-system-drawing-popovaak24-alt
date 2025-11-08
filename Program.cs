@@ -56,36 +56,7 @@ namespace GraphPlotApp
             topPanel.Controls.Add(rbLine);
             topPanel.Controls.Add(rbPoints);
 
-            // Parameter controls: xMin, xMax, step, point size and Y-clamp
-            var lblXMin = new Label { Text = "xMin:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
-            var nudXMin = new NumericUpDown { DecimalPlaces = 3, Increment = 1m / 100m, Minimum = -1000, Maximum = 1000, Value = (decimal)sampleProvider.XMin, Width = 80 };
-            var lblXMax = new Label { Text = "xMax:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
-            var nudXMax = new NumericUpDown { DecimalPlaces = 3, Increment = 1m / 100m, Minimum = -1000, Maximum = 1000, Value = (decimal)sampleProvider.XMax, Width = 80 };
-            var lblStep = new Label { Text = "step:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
-            var nudStep = new NumericUpDown { DecimalPlaces = 4, Increment = 1m / 1000m, Minimum = 0.0001m, Maximum = 1, Value = (decimal)sampleProvider.Step, Width = 80 };
-            var lblPoint = new Label { Text = "point:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
-            var nudPoint = new NumericUpDown { DecimalPlaces = 1, Increment = 0.5m, Minimum = 1, Maximum = 20, Value = (decimal)pointSize, Width = 60 };
-            var chkClamp = new CheckBox { Text = "Clamp Y", AutoSize = true, Padding = new Padding(6) };
-            var nudClamp = new NumericUpDown { DecimalPlaces = 0, Increment = 1m, Minimum = 1, Maximum = 100000, Value = 100, Width = 80, Enabled = false };
-
-            chkClamp.CheckedChanged += (s, e) => { nudClamp.Enabled = chkClamp.Checked; Invalidate(); };
-
-            // Wire numeric controls to update provider / settings
-            nudXMin.ValueChanged += (s, e) => { sampleProvider.XMin = (double)nudXMin.Value; Invalidate(); };
-            nudXMax.ValueChanged += (s, e) => { sampleProvider.XMax = (double)nudXMax.Value; Invalidate(); };
-            nudStep.ValueChanged += (s, e) => { sampleProvider.Step = (double)nudStep.Value; Invalidate(); };
-            nudPoint.ValueChanged += (s, e) => { pointSize = (float)nudPoint.Value; Invalidate(); };
-
-            topPanel.Controls.Add(lblXMin);
-            topPanel.Controls.Add(nudXMin);
-            topPanel.Controls.Add(lblXMax);
-            topPanel.Controls.Add(nudXMax);
-            topPanel.Controls.Add(lblStep);
-            topPanel.Controls.Add(nudStep);
-            topPanel.Controls.Add(lblPoint);
-            topPanel.Controls.Add(nudPoint);
-            topPanel.Controls.Add(chkClamp);
-            topPanel.Controls.Add(nudClamp);
+            // No additional parameter controls (fixed sampling parameters)
             Controls.Add(topPanel);
   // When the form is resized, invalidate so Paint runs again and rescales
             Resize += (s, e) => Invalidate();
@@ -107,28 +78,12 @@ namespace GraphPlotApp
             var xs = tup.Xs;
             var ys = tup.Ys;
             if (xs.Count < 2) return;
-            // determine y-range (optionally clamp to avoid extreme scaling)
+            // determine y-range
             double yMin = double.PositiveInfinity, yMax = double.NegativeInfinity;
-            bool clampY = false;
-            double clampVal = 100;
-            // find clamp controls by scanning topPanel (safe check for null)
-            if (topPanel != null)
-            {
-                foreach (Control c in topPanel.Controls)
-                {
-                    if (c is CheckBox cb && cb.Text == "Clamp Y") clampY = cb.Checked;
-                    if (c is NumericUpDown nud && nud.Enabled && nud.Maximum == 100000 && nud.DecimalPlaces == 0) clampVal = (double)nud.Value;
-                }
-            }
 
             for (int i = 0; i < ys.Count; i++)
             {
                 double y = ys[i];
-                if (clampY)
-                {
-                    if (y > clampVal) y = clampVal;
-                    if (y < -clampVal) y = -clampVal;
-                }
                 if (y < yMin) yMin = y;
                 if (y > yMax) yMax = y;
             }
@@ -150,11 +105,6 @@ namespace GraphPlotApp
             {
                 float sx = (float)(plotRect.Left + (xs[i] - xMinPlot) / (xMaxPlot - xMinPlot) * plotRect.Width);
                 double yVal = ys[i];
-                if (clampY)
-                {
-                    if (yVal > clampVal) yVal = clampVal;
-                    if (yVal < -clampVal) yVal = -clampVal;
-                }
                 float sy = (float)(plotRect.Top + (1 - (yVal - yMinPlot) / (yMaxPlot - yMinPlot)) * plotRect.Height);
                 pts[i] = new PointF(sx, sy);
             }
@@ -246,15 +196,7 @@ namespace GraphPlotApp
                     g.DrawLines(pen, pts);
                 }
             }
-            // draw labels (simple)
-            using (var brush = new SolidBrush(Color.Black))
-            using (var font = new Font("Segoe UI", 9))
-            {
-    string xLabel = $"x: [{sampleProvider.XMin:0.###} .. {sampleProvider.XMax:0.###}], step={sampleProvider.Step}";
-                string yLabel = $"y: [{yMin:0.###} .. {yMax:0.###}]";
-          g.DrawString(xLabel, font, brush, rect.Left + 8, rect.Bottom - 20);
-          g.DrawString(yLabel, font, brush, rect.Left + 8, rect.Bottom - 36);
-            }
+                        // (No parameter labels — simplified display)
         }
     }
 }
