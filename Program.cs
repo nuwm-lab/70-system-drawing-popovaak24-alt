@@ -21,15 +21,15 @@ namespace GraphPlotApp
 
     public class GraphForm : Form
     {
-        // UI controls for rendering mode
-        private FlowLayoutPanel topPanel;
-        private RadioButton rbLine;
-        private RadioButton rbPoints;
-        private float pointSize = 6f;
-        // Plot parameters (change if needed)
-        private readonly double xMin = 0.1;
-        private readonly double xMax = 1.2;
-        private readonly double step = 0.01; // delta x
+    // UI controls for rendering mode and parameters
+    private FlowLayoutPanel topPanel;
+    private RadioButton rbLine;
+    private RadioButton rbPoints;
+    private float pointSize = 6f;
+    // Sampling provider (separated responsibility and cached internally)
+    private readonly SampleProvider sampleProvider = new SampleProvider(0.1, 1.2, 0.01);
+    // Plot parameters accessible from UI
+    // Note: sampleProvider keeps the authoritative parameter values; UI changes update it.
         // Fields used for drawing bounds
         private double xMinPlot, xMaxPlot, yMinPlot, yMaxPlot;
         public GraphForm()
@@ -38,7 +38,7 @@ namespace GraphPlotApp
             MinimumSize = new Size(480, 320);
             DoubleBuffered = true; // reduce flicker
             BackColor = Color.White;
-            // Top panel with rendering mode selection
+            // Top panel with rendering mode selection and parameter controls
             topPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
@@ -49,16 +49,49 @@ namespace GraphPlotApp
             };
             var lbl = new Label { Text = "Режим:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 8, 6, 0) };
             rbLine = new RadioButton { Text = "Лінійний", AutoSize = true, Checked = true, Padding = new Padding(6) };
- rbPoints = new RadioButton { Text = "Точковий", AutoSize = true, Padding = new Padding(6) };
+            rbPoints = new RadioButton { Text = "Точковий", AutoSize = true, Padding = new Padding(6) };
             rbLine.CheckedChanged += (s, e) => Invalidate();
             rbPoints.CheckedChanged += (s, e) => Invalidate();
             topPanel.Controls.Add(lbl);
             topPanel.Controls.Add(rbLine);
             topPanel.Controls.Add(rbPoints);
+
+            // Parameter controls: xMin, xMax, step, point size and Y-clamp
+            var lblXMin = new Label { Text = "xMin:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
+            var nudXMin = new NumericUpDown { DecimalPlaces = 3, Increment = 1m / 100m, Minimum = -1000, Maximum = 1000, Value = (decimal)sampleProvider.XMin, Width = 80 };
+            var lblXMax = new Label { Text = "xMax:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
+            var nudXMax = new NumericUpDown { DecimalPlaces = 3, Increment = 1m / 100m, Minimum = -1000, Maximum = 1000, Value = (decimal)sampleProvider.XMax, Width = 80 };
+            var lblStep = new Label { Text = "step:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
+            var nudStep = new NumericUpDown { DecimalPlaces = 4, Increment = 1m / 1000m, Minimum = 0.0001m, Maximum = 1, Value = (decimal)sampleProvider.Step, Width = 80 };
+            var lblPoint = new Label { Text = "point:", AutoSize = true, Padding = new Padding(6, 8, 6, 0) };
+            var nudPoint = new NumericUpDown { DecimalPlaces = 1, Increment = 0.5m, Minimum = 1, Maximum = 20, Value = (decimal)pointSize, Width = 60 };
+            var chkClamp = new CheckBox { Text = "Clamp Y", AutoSize = true, Padding = new Padding(6) };
+            var nudClamp = new NumericUpDown { DecimalPlaces = 0, Increment = 1m, Minimum = 1, Maximum = 100000, Value = 100, Width = 80, Enabled = false };
+
+            chkClamp.CheckedChanged += (s, e) => { nudClamp.Enabled = chkClamp.Checked; Invalidate(); };
+
+            // Wire numeric controls to update provider / settings
+            nudXMin.ValueChanged += (s, e) => { sampleProvider.XMin = (double)nudXMin.Value; Invalidate(); };
+            nudXMax.ValueChanged += (s, e) => { sampleProvider.XMax = (double)nudXMax.Value; Invalidate(); };
+            nudStep.ValueChanged += (s, e) => { sampleProvider.Step = (double)nudStep.Value; Invalidate(); };
+            nudPoint.ValueChanged += (s, e) => { pointSize = (float)nudPoint.Value; Invalidate(); };
+
+            topPanel.Controls.Add(lblXMin);
+            topPanel.Controls.Add(nudXMin);
+            topPanel.Controls.Add(lblXMax);
+            topPanel.Controls.Add(nudXMax);
+            topPanel.Controls.Add(lblStep);
+            topPanel.Controls.Add(nudStep);
+            topPanel.Controls.Add(lblPoint);
+            topPanel.Controls.Add(nudPoint);
+            topPanel.Controls.Add(chkClamp);
+            topPanel.Controls.Add(nudClamp);
             Controls.Add(topPanel);
   // When the form is resized, invalidate so Paint runs again and rescales
             Resize += (s, e) => Invalidate();
         }
+
+        // (Sampling is delegated to SampleProvider)
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -66,30 +99,36 @@ namespace GraphPlotApp
  g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             var rect = ClientRectangle;
             int marginLeftRight = 50;
-  int marginTop = topPanel?.Height + 10 ?? 60; // leave room for top controls
+            int marginTop = topPanel?.Height + 10 ?? 60; // leave room for top controls
             var plotRect = new Rectangle(rect.Left + marginLeftRight, rect.Top + marginTop, Math.Max(10, rect.Width - 2 * marginLeftRight), Math.Max(10, rect.Height - marginTop - marginLeftRight));
-            // Calculate function samples
-            var xs = new List<double>();
-            var ys = new List<double>();
-            for (double x = xMin; x <= xMax + 1e-12; x += step)
-            {
-                double cosHalf = Math.Cos(0.5 * x);
-                // avoid vertical asymptotes of tan(0.5*x)
-                if (Math.Abs(cosHalf) < 1e-9) continue;
-                double tanHalf = Math.Tan(0.5 * x);
-                double denom = x * x * x; // x^3
-                // function: y = tan(0.5*x) / (x^3) + 7.5
-                double y = tanHalf / denom + 7.5;
-                if (double.IsInfinity(y) || double.IsNaN(y)) continue;
-                xs.Add(x);
-                ys.Add(y);
-            }
+
+            // Retrieve samples from provider (cached inside provider)
+            var tup = sampleProvider.GetSamples();
+            var xs = tup.Xs;
+            var ys = tup.Ys;
             if (xs.Count < 2) return;
-            // determine y-range
-  double yMin = double.PositiveInfinity, yMax = double.NegativeInfinity;
+            // determine y-range (optionally clamp to avoid extreme scaling)
+            double yMin = double.PositiveInfinity, yMax = double.NegativeInfinity;
+            bool clampY = false;
+            double clampVal = 100;
+            // find clamp controls by scanning topPanel (safe check for null)
+            if (topPanel != null)
+            {
+                foreach (Control c in topPanel.Controls)
+                {
+                    if (c is CheckBox cb && cb.Text == "Clamp Y") clampY = cb.Checked;
+                    if (c is NumericUpDown nud && nud.Enabled && nud.Maximum == 100000 && nud.DecimalPlaces == 0) clampVal = (double)nud.Value;
+                }
+            }
+
             for (int i = 0; i < ys.Count; i++)
             {
                 double y = ys[i];
+                if (clampY)
+                {
+                    if (y > clampVal) y = clampVal;
+                    if (y < -clampVal) y = -clampVal;
+                }
                 if (y < yMin) yMin = y;
                 if (y > yMax) yMax = y;
             }
@@ -99,10 +138,10 @@ namespace GraphPlotApp
                 yMin = yMin - 1;
             }
             // Add small padding to data ranges so curve doesn't touch borders
-            double xPad = (xMax - xMin) * 0.02;
+            double xPad = (sampleProvider.XMax - sampleProvider.XMin) * 0.02;
             double yPad = (yMax - yMin) * 0.08;
-            xMinPlot = xMin - xPad;
-            xMaxPlot = xMax + xPad;
+            xMinPlot = sampleProvider.XMin - xPad;
+            xMaxPlot = sampleProvider.XMax + xPad;
             yMinPlot = yMin - yPad;
             yMaxPlot = yMax + yPad;
             // Map samples to screen points
@@ -110,7 +149,13 @@ namespace GraphPlotApp
             for (int i = 0; i < xs.Count; i++)
             {
                 float sx = (float)(plotRect.Left + (xs[i] - xMinPlot) / (xMaxPlot - xMinPlot) * plotRect.Width);
-    float sy = (float)(plotRect.Top + (1 - (ys[i] - yMinPlot) / (yMaxPlot - yMinPlot)) * plotRect.Height);
+                double yVal = ys[i];
+                if (clampY)
+                {
+                    if (yVal > clampVal) yVal = clampVal;
+                    if (yVal < -clampVal) yVal = -clampVal;
+                }
+                float sy = (float)(plotRect.Top + (1 - (yVal - yMinPlot) / (yMaxPlot - yMinPlot)) * plotRect.Height);
                 pts[i] = new PointF(sx, sy);
             }
             // draw plot background/border
@@ -205,7 +250,7 @@ namespace GraphPlotApp
             using (var brush = new SolidBrush(Color.Black))
             using (var font = new Font("Segoe UI", 9))
             {
-   string xLabel = $"x: [{xMin:0.###} .. {xMax:0.###}], step={step}";
+    string xLabel = $"x: [{sampleProvider.XMin:0.###} .. {sampleProvider.XMax:0.###}], step={sampleProvider.Step}";
                 string yLabel = $"y: [{yMin:0.###} .. {yMax:0.###}]";
           g.DrawString(xLabel, font, brush, rect.Left + 8, rect.Bottom - 20);
           g.DrawString(yLabel, font, brush, rect.Left + 8, rect.Bottom - 36);
